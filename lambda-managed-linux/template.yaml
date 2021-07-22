@@ -1,0 +1,346 @@
+ # Copyright 2021 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ #
+ # Permission is hereby granted, free of charge, to any person obtaining a copy of this
+ # software and associated documentation files (the "Software"), to deal in the Software
+ # without restriction, including without limitation the rights to use, copy, modify,
+ # merge, publish, distribute, sublicense, and/or sell copies of the Software, and to
+ # permit persons to whom the Software is furnished to do so.
+ #
+ # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+ # INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+ # PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+ # HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+ # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+ # SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Description: >
+  amazon-ec2-autoscaling-lifecycle-hook-lambda-linux-example
+  
+  Sample CloudFormation template that deploys an Auto Scaling Group with Lifecycle Hooks that are managed from a Lambda function. 
+
+Parameters:
+  AmiId:
+    Description: AMI Id
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2'
+  AutoScalingGroupName:
+    Description: TBD
+    Type: String
+    Default: Cribl Worker Group Autoscaling Group
+  AutoScalingGroupMinSize:
+    Description: TBD
+    Type: Number
+    Default: 1
+  AutoScalingGroupMaxSize:
+    Description: TBD
+    Type: Number
+    Default: 4
+  AutoScalingGroupDesiredCapacity:
+    Description: TBD
+    Type: Number
+    Default: 0
+  CriblLeaderHost:
+    Description: Hostname/IP Address for the worker group to use to connect to the leader node.
+    Type: String
+  CriblLeaderPort:
+    Description: TCP Port for the worker group to use to connect to the leader node.
+    Type: Number
+    Default: 4200
+  CriblLeaderToken:
+    Description: Auth Token for the worker group to use to connect to the leader node.
+    Type: String
+    Default: "criblmaster"
+  HeartbeatTimeout:
+    Description: Time (in seconds) to wait before timing out (defaults to 3600 seconds)
+    Type: Number
+    Default: 3600
+  InstanceType:
+    Description: Amazon EC2 Instance Type
+    Type: String
+    Default: "t2.micro"
+  InstanceKeyPair: 
+    Description: Amazon EC2 Key Pair
+    Type: "AWS::EC2::KeyPair::KeyName"
+  InstanceSecurityGroup:
+    Description: AWS Security Group for the Instances
+    Type: AWS::EC2::SecurityGroup::Id
+  LifecycleHookName:
+    Description: TBD
+    Type: String
+    Default: "Cribl-Scaledown-Hook"
+  Queues:
+    Description: List of Paths to check for queue data - separated by commas.
+    Type: String
+    Default: "/opt/cribl/stats/queues"
+  SubnetIDs:
+    Description: List of Subnet ID's that the instances should spin up in"
+    Type: List<AWS::EC2::Subnet::Id>
+
+Metadata: 
+  AWS::CloudFormation::Interface: 
+    ParameterGroups:
+    - 
+      Label: 
+        default: "VPC Configuration"
+      Parameters: 
+        - SubnetIDs
+    -
+      Label:
+        default: "LogStream Configuration"
+      Parameters:
+        - CriblLeaderHost
+        - CriblLeaderPort
+        - CriblLeaderToken
+    -
+      Label:
+        default: "Instance Configuration"
+      Parameters:
+        - AmiId
+        - InstanceType
+        - InstanceKeyPair 
+    -
+      Label: 
+        default: "Auto Scaling Group Configuration"
+      Parameters: 
+        - AutoScalingGroupName
+        - AutoScalingGroupVpcID
+        - AutoScalingGroupSubnetIDs
+        - AutoScalingGroupMinSize
+        - AutoScalingGroupMaxSize
+        - AutoScalingGroupDesiredCapacity
+        - LifecycleHookName
+
+Resources:
+
+  # Instance/Auto Scaling Group Resources
+
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData:
+        ImageId: !Ref AmiId
+        InstanceType: !Ref InstanceType
+        KeyName: !Ref InstanceKeyPair
+        SecurityGroupIds:
+          - !Ref InstanceSecurityGroup
+        IamInstanceProfile:
+          Arn: !GetAtt
+            - InstanceProfile
+            - Arn
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: Name
+                Value: !Ref LifecycleHookName            
+        UserData: 
+          'Fn::Base64': 
+            !Sub 
+              - |- 
+                Content-Type: multipart/mixed; boundary="//"
+                MIME-Version: 1.0
+
+                --//
+                Content-Type: text/cloud-config; charset="us-ascii"
+                MIME-Version: 1.0
+                Content-Transfer-Encoding: 7bit
+                Content-Disposition: attachment; filename="cloud-config.txt"
+
+                #cloud-config
+                cloud_final_modules:
+                - [scripts-user, always]
+
+                --//
+                Content-Type: text/x-shellscript; charset="us-ascii"
+                MIME-Version: 1.0
+                Content-Transfer-Encoding: 7bit
+                Content-Disposition: attachment; filename="userdata.txt"
+
+                #!/bin/bash
+                rpm -q stress &> /dev/null
+                if [ $? -ne 0 ]
+                  then
+                    sudo amazon-linux-extras install epel -y
+                    sudo yum install stress -y
+                fi
+                # Install and run LogStream
+                # Set up cribl user and group
+                groupadd -g 9000 cribl
+                useradd -u 9000 -g 9000 cribl
+
+                # Download and extract logstream tarball
+                curl -Lso - $(curl https://cdn.cribl.io/dl/latest-x64) | (cd /opt; tar zxf -)
+                
+                # Change ownership of the tree to cribl:cribl
+                chown -R 9000:9000 /opt/cribl
+                
+                su -c "/opt/cribl/bin/cribl mode-worker -H ${CriblLeaderHost} -p ${CriblLeaderPort} -u ${CriblLeaderToken}" cribl
+                #chown -R 9000:9000 /opt/cribl
+                /opt/cribl/bin/cribl boot-start enable -u cribl
+                service cribl start
+                if [ ! -d /opt/cribl/scripts ]; then
+                  mkdir /opt/cribl/scripts
+                  chown 9000:9000 /opt/cribl/scripts
+                fi
+                curl -o /opt/cribl/scripts/check_files.sh  https://cdn.cribl.io/scripts/check_files.sh
+                chown 9000:9000 /opt/cribl/scripts/check_files.sh
+                chmod 755 /opt/cribl/scripts/check_files.sh
+
+                --//
+              - { 
+                  autoScalingGroupName: !Ref AutoScalingGroupName,
+                  lifecycleHookName: !Ref LifecycleHookName
+                }
+
+  InstanceRole:
+    Type: "AWS::IAM::Role"
+    Properties:           
+      AssumeRolePolicyDocument: 
+        Version: "2012-10-17"
+        Statement: 
+          - 
+            Effect: "Allow"
+            Principal: 
+              Service: 
+                - "ec2.amazonaws.com"
+            Action: 
+              - "sts:AssumeRole"
+      Path: "/"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+
+  InstanceProfile: 
+    Type: "AWS::IAM::InstanceProfile"
+    Properties: 
+      Path: "/"
+      Roles: 
+        - 
+          Ref: "InstanceRole"
+
+  AutoScalingGroup:    
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties: 
+      AutoScalingGroupName: !Ref AutoScalingGroupName
+      LaunchTemplate: 
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber
+      DesiredCapacity: !Ref AutoScalingGroupDesiredCapacity
+      MaxSize: !Ref AutoScalingGroupMaxSize
+      MinSize: !Ref AutoScalingGroupMinSize
+      VPCZoneIdentifier: !Ref SubnetIDs
+
+  LifecycleHook:
+    Type: AWS::AutoScaling::LifecycleHook
+    Properties:
+      LifecycleHookName: !Ref LifecycleHookName
+      AutoScalingGroupName: !Ref AutoScalingGroup
+      DefaultResult: ABANDON
+      HeartbeatTimeout: 900
+      LifecycleTransition: "autoscaling:EC2_INSTANCE_TERMINATING"
+
+  # Lambda/CloudWatch Rule Resources
+
+  LifecycleEventRule: 
+    Type: AWS::Events::Rule
+    Properties: 
+      Description: "EventRule"
+      EventPattern: 
+        source: 
+            - "aws.autoscaling"
+        detail-type: 
+            - "EC2 Instance-terminate Lifecycle Action" 
+        detail:
+            AutoScalingGroupName:
+              - !Ref AutoScalingGroup
+      State: "ENABLED"
+      Targets: 
+        - 
+          Arn: 
+            Fn::GetAtt: 
+                - "LifecycleFunction"
+                - "Arn"
+          Id: "LifecycleFunctionV1"
+    
+  PermissionForEventsToInvokeLifecycleLambda: 
+    Type: AWS::Lambda::Permission
+    Properties: 
+      FunctionName: 
+        Ref: "LifecycleFunction"
+      Action: "lambda:InvokeFunction"
+      Principal: "events.amazonaws.com"
+      SourceArn: 
+        Fn::GetAtt: 
+          - "LifecycleEventRule"
+          - "Arn"
+
+  LifecycleFunctionRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: "sts:AssumeRole"
+      Policies:
+        - PolicyName: LifecycleFunctionLogsPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource: "*"
+        - PolicyName: LifecycleFunctionCompleteLifecycleActionPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: 
+                  - "autoscaling:CompleteLifecycleAction"
+                Resource: !Sub "arn:aws:autoscaling:${AWS::Region}:${AWS::AccountId}:autoScalingGroup:*:autoScalingGroupName/${AutoScalingGroupName}"
+        - PolicyName: LifecycleFunctionSSMSendCommandDocumentPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: 
+                  - "ssm:SendCommand"
+                Resource: !Sub "arn:aws:ssm:${AWS::Region}::document/AWS-RunShellScript"
+        - PolicyName: LifecycleFunctionSSMSendCommandInstancePolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: 
+                  - "ssm:SendCommand"
+                Resource: "arn:aws:ec2:*:*:instance/*"
+                Condition:
+                  StringEquals:
+                    ssm:ResourceTag/aws:autoscaling:groupName:
+                      - !Ref AutoScalingGroup
+        - PolicyName: LifecycleFunctionSSMGetCommandInvocationPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: 
+                  - "ssm:GetCommandInvocation"
+                Resource: "*"
+
+  LifecycleFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: source/LifecycleFunction/
+      Handler: app.lambda_handler
+      Role: !GetAtt [ LifecycleFunctionRole, Arn ]
+      Runtime: python3.8
+      Timeout: 600
+      Environment: 
+        Variables:
+          QUEUES: !Ref Queues
