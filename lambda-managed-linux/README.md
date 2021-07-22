@@ -11,7 +11,7 @@ If you're using the persistent queueing feature in LogStream, while using an Aut
 While there is a plan to have a mechanism for LogStream to drain it's queues before a shutdown, it is not present yet. Additionally, lifecycle hooks in ASG's do not allow you to *cancel* a termination, only delay it. 
 
 ### Implementation Diagram 
-![Implementation Diagram](img/LambdaSolutionDiagram.svg)
+![Implementation Diagram](img/LambdaSolutionDiagram.png)
 
 ### Prerequisites
 
