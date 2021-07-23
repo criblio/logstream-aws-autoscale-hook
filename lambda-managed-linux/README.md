@@ -1,4 +1,5 @@
 # LogStream Worker Group with Autoscaling Scale Down Hooks 
+## Lambda Edition
 
 This solution borrows HEAVILY from the [AWS EC2 Autoscaling Group Examples](https://github.com/aws-samples/amazon-ec2-auto-scaling-group-examples) repo. This repo will deploy a LogStream worker group as an Autoscaling Group, as well as a lambda connected as a lifecycle hook for EC2 Termination requests. 
 
