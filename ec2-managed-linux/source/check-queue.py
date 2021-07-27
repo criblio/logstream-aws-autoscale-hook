@@ -151,12 +151,13 @@ def main():
               #logger.error(message)
               #send_lifecycle_action(event, 'ABANDON')
           logger.info('Execution Complete')
-          return
+          next
   
       # Else
       logger.info('An unhandled lifecycle action occured, abandoning.')
       #send_lifecycle_action(event, 'ABANDON')
       logger.info('Execution Complete')
+      sqs.delete_message(QueueUrl=os.environ['QUEUE_URL'], ReceiptHandle=message['ReceiptHandle'])
   
       # End
     return
