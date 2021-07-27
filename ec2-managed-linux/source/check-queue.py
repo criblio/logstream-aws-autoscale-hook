@@ -51,7 +51,7 @@ def send_lifecycle_action(event, result):
         message = 'Error completing lifecycle action: {}'.format(e)
         logger.error(message)
         raise Exception(message)
-    
+
     return
 
 def run_command(event, command):
@@ -73,11 +73,11 @@ def run_command(event, command):
                     ]
                 }
             )
-        
+
             logger.info(response)
             if 'Command' in response:
                 break
-            
+
             if attempt == 10:
                 message = 'Command did not execute succesfully in time allowed.'
                 raise Exception(message)
@@ -91,7 +91,7 @@ def run_command(event, command):
     command_id = response['Command']['CommandId']
     logger.info('Calling GetCommandInvocation for command: {} for instance: {}'.format(command_id, event['EC2InstanceId']))
     attempt = 0
-    
+
     while attempt < 20:
         attempt = attempt + 1
         try:
@@ -119,7 +119,7 @@ def run_command(event, command):
             message = 'Error calling GetCommandInvocation: {}'.format(e)
             logger.error(message)
             raise Exception(message)
-    
+
     if result['Status'] == 'Success':
         return
     else:
@@ -132,33 +132,38 @@ def main():
     if "QUEUE_URL" not in os.environ:
       logger.error("No QUEUE_URL defined, exiting")
       sys.exit(255)
-  
-    sqsret = sqs.receive_message(QueueUrl=os.environ['QUEUE_URL'])
-    for message in sqsret['Messages']:
-      event = json.loads(message['Body'])
 
-      logger.info(event)
-      # If Instance is Launching into AutoScalingGroup
-      if event['Origin'] == 'AutoScalingGroup' and event['Destination'] == 'EC2':
-          logger.info('Instance Terminating in AutoScalingGroup')
-          try:
-              command = "QUEUES='%s' /opt/cribl/scripts/check_files.sh" % os.environ['QUEUES']
-              run_command(event, command)
-              send_lifecycle_action(event, 'CONTINUE')
-          except Exception as e:
-              logger.error("Exception Failure")
-              #message = 'Error running command: {}'.format(e)
-              #logger.error(message)
-              #send_lifecycle_action(event, 'ABANDON')
-          logger.info('Execution Complete')
-          next
-  
-      # Else
-      logger.info('An unhandled lifecycle action occured, abandoning.')
-      #send_lifecycle_action(event, 'ABANDON')
-      logger.info('Execution Complete')
-      sqs.delete_message(QueueUrl=os.environ['QUEUE_URL'], ReceiptHandle=message['ReceiptHandle'])
-  
+    sqsret = sqs.receive_message(QueueUrl=os.environ['QUEUE_URL'])
+    if 'Messages' in sqsret:
+      for message in sqsret['Messages']:
+        event = json.loads(message['Body'])
+
+        logger.info(event)
+        # If Instance is Launching into AutoScalingGroup
+        if event['Origin'] == 'AutoScalingGroup' and event['Destination'] == 'EC2':
+            logger.info('Instance Terminating in AutoScalingGroup')
+            try:
+                command = "QUEUES='%s' /opt/cribl/scripts/check_files.sh" % os.environ['QUEUES']
+                run_command(event, command)
+                send_lifecycle_action(event, 'CONTINUE')
+            except Exception as e:
+                logger.error("Exception Failure")
+                logger.info('Execution Complete')
+            delres = sqs.delete_message(QueueUrl=os.environ['QUEUE_URL'], ReceiptHandle=message['ReceiptHandle'])
+            logger.info(delres)
+            next
+        else:
+          logger.info("Not the right Event Type - ignoring")
+          delres = sqs.delete_message(QueueUrl=os.environ['QUEUE_URL'], ReceiptHandle=message['ReceiptHandle'])
+          logger.info(delres)
+
+        # Else
+        #logger.info('An unhandled lifecycle action occured, abandoning.')
+        ##send_lifecycle_action(event, 'ABANDON')
+        #logger.info('Execution Complete')
+        #delres = sqs.delete_message(QueueUrl=os.environ['QUEUE_URL'], ReceiptHandle=message['ReceiptHandle'])
+        #logger.info(delres)
+
       # End
     return
 

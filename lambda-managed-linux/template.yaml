@@ -74,7 +74,7 @@ Parameters:
   Queues:
     Description: List of Paths to check for queue data - separated by commas.
     Type: String
-    Default: "/opt/cribl/stats/queues"
+    Default: "/opt/cribl/state/queues"
   SubnetIDs:
     Description: List of Subnet ID's that the instances should spin up in"
     Type: List<AWS::EC2::Subnet::Id>
