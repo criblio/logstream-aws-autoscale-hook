@@ -1,6 +1,6 @@
 # LogStream Worker Group with Autoscaling Scale Down Hooks 
 
-This solution borrows HEAVILY from the [AWS EC2 Autoscaling Group Examples](https://github.com/aws-samples/amazon-ec2-auto-scaling-group-examples) repo. This repo will deploy a LogStream worker group as an Autoscaling Group, as well as a lambda connected as a lifecycle hook for EC2 Termination requests. 
+This solution borrows HEAVILY from the [AWS EC2 Autoscaling Group Examples](https://github.com/aws-samples/amazon-ec2-auto-scaling-group-examples) repo. This repo will deploy a LogStream worker group as an Autoscaling Group, as well as an EC2 instance that runs a python script to serve as a lifecycle hook for EC2 Termination requests. 
 
 ## Why?
 
@@ -11,7 +11,7 @@ If you're using the persistent queueing feature in LogStream, while using an Aut
 While there is a plan to have a mechanism for LogStream to drain it's queues before a shutdown, it is not present yet. Additionally, lifecycle hooks in ASG's do not allow you to *cancel* a termination, only delay it. 
 
 ### Implementation Diagram 
-![Implementation Diagram](img/LambdaSolutionDiagram.png)
+![Implementation Diagram](img/EC2SolutionDiagram.png)
 
 ### Prerequisites
 
