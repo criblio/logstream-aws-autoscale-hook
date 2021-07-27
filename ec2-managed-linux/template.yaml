@@ -125,7 +125,7 @@ Resources:
       SecurityGroupIds:
         - !Ref InstanceSecurityGroup
       SubnetId: !Select [ 0, !Ref SubnetIDs ]
-      IamInstanceProfile: !Ref InstanceProfile
+      IamInstanceProfile: !Ref ec2MgrInstanceProfile
       UserData: 
         'Fn::Base64': 
           !Sub 
@@ -162,7 +162,7 @@ Resources:
               # Set Up Crontab
               crontab -l 2>&1 > /dev/null
               if [ $? -ne 0 ]; then
-                echo "* * * * * QUEUES=${Queues} QUEUE_URL=${QueueURL} /opt/check-queue.py" | crontab -
+                echo "* * * * * QUEUES=${Queues} QUEUE_URL=${QueueURL} /opt/check-queue.py >> /var/log/check-queue.log" | crontab -
               else
                 echo "$(crontab -l; echo \"* * * * * QUEUE_URL=${QueueURL} /opt/check-queue.py >> /var/log/check-queue.log\")" | crontab -
               fi
