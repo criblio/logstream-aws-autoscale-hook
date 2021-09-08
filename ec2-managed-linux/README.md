@@ -78,5 +78,6 @@ Once you've installed all the pre-requisites, and cloned this repo, from the lam
 |InstanceKeyPair|Amazon EC2 Key Pair|String|_none_|
 |InstanceSecurityGroup|AWS Security Group for the Instances|Security Group ID (sg-<id>)|_none_|
 |LifecycleHookName|Name of the Lifecycle Hook Function|String|Cribl-Scaledown-Hook|
+|ManagerSecurityGroup|AWS Security Group for the Manager Instance|Security Group ID (sg-<id>)|_none_|
 |Queues|List of Paths to check for queue data - separated by commas.|Comma Separated List of Directory Paths|`/opt/cribl/stats/queues`
 |SubnetIDs|List of Subnet ID's that the instances should spin up in|AWS Subnet IDs (subnet-<id>), comma separated|_none_|

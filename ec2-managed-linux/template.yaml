@@ -67,6 +67,9 @@ Parameters:
   InstanceSecurityGroup:
     Description: AWS Security Group for the Instances
     Type: AWS::EC2::SecurityGroup::Id
+  ManagerSecurityGroup:
+    Description: AWS Security Group for the Manager Instance
+    Type: AWS::EC2::SecurityGroup::Id
   LifecycleHookName:
     Description: TBD
     Type: String
@@ -123,9 +126,14 @@ Resources:
       InstanceType: !Ref InstanceType
       KeyName: !Ref InstanceKeyPair
       SecurityGroupIds:
-        - !Ref InstanceSecurityGroup
+        - !Ref ManagerSecurityGroup
       SubnetId: !Select [ 0, !Ref SubnetIDs ]
       IamInstanceProfile: !Ref ec2MgrInstanceProfile
+      Tags:
+        - Key: Name
+          Value: !Sub 
+              - "${LifecycleHookName}-Manager"             
+              - lifecycleHookName: !Ref LifecycleHookName
       UserData: 
         'Fn::Base64': 
           !Sub 
